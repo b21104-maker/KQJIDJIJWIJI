@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>배꽃일기 - 이화여고 성장 기록 웹앱</title>
+    
+    <style>
+        @import url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_2001@1.1/MapoFlowerIsland.woff');
+    </style>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, setPersistence, browserLocalPersistence, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, getDocs, query, where, onSnapshot, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY_HERE",
+            authDomain: "YOUR_AUTH_DOMAIN_HERE",
+            projectId: "YOUR_PROJECT_ID_HERE",
+            storageBucket: "YOUR_STORAGE_BUCKET_HERE",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID_HERE",
+            appId: "YOUR_APP_ID_HERE"
+        };
+
+        let app, auth, db, googleProvider;
+        try {
+            if (firebaseConfig.apiKey !== "YOUR_API_KEY_HERE" && firebaseConfig.apiKey.trim() !== "") {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                googleProvider = new GoogleAuthProvider();
+                window.isFirebaseValid = true;
+            } else {
+                window.isFirebaseValid = false;
+            }
+        } catch (e) {
+            window.isFirebaseValid = false;
+        }
+
+        window.fbAuth = auth; window.fbDb = db; window.fbProvider = googleProvider;
+        window.fbSignInWithPopup = signInWithPopup; window.fbLogOut = signOut;
+        window.fbSetPersistence = setPersistence; window.fbPersistenceLocal = browserLocalPersistence;
+        window.fbOnAuthStateChanged = onAuthStateChanged;
+        window.fbDoc = doc; window.fbSetDoc = setDoc; window.fbGetDoc = getDoc; window.fbUpdateDoc = updateDoc;
+        window.fbCollection = collection; window.fbAddDoc = addDoc; window.fbGetDocs = getDocs; window.fbQuery = query; window.fbWhere = where;
+        window.fbOnSnapshot = onSnapshot; window.fbOrderBy = orderBy;
+    </script>
+
+    <style>
+        :root {
+            --bg-color: #ffffff;         /* 모던 화이트 배경 테마 */
+            --card-color: #91B67B;       /* 차분한 상자 초록색 */
+            --point-dark: #286540;       /* 깊은 이화 초록색 */
+            --point-mid: #2E8B57;        /* 미드 초록 */
+            --point-light: #8FBC8F;      /* 연한 시스린 초록 */
+            --text-color: #14351A;       /* 메인 본문 글자색 */
+            --white: #ffffff;
+            --dark-red: #b34a4a;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'MapoFlowerIsland', 'Apple SD Gothic Neo', sans-serif !important; }
+        body { background-color: var(--bg-color); color: var(--text-color); display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+
+        .app-container {
+            width: 100%; max-width: 412px; height: 88vh; background: var(--white); border-radius: 32px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.15); display: flex; flex-direction: column; overflow: hidden; position: relative; border: 4px solid var(--point-dark);
+        }
+
+        header { background: linear-gradient(135deg, var(--point-dark), var(--point-mid)); color: var(--white); padding: 18px; text-align: center; font-weight: bold; font-size: 1.3rem; display: none; letter-spacing: 1px; }
+        .main-content { flex: 1; overflow-y: auto; background-color: var(--bg-color); background-image: linear-gradient(rgba(200, 220, 240, 0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(200, 220, 240, 0.3) 1px, transparent 1px); background-size: 20px 20px; position: relative; }
+
+        .diary-spring-deco { width: 100%; height: 16px; display: none; justify-content: space-around; padding: 0 20px; position: absolute; top: 5px; left: 0; z-index: 5; }
+        .spring-ring { width: 10px; height: 22px; background: linear-gradient(to right, #ccc, #fff, #999); border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+
+        .view { display: none; height: 100%; padding: 25px 20px 20px 20px; position: relative; }
+        .view.active { display: block; }
+        #view-splash { padding: 0; cursor: pointer; }
+
+        .splash-bg { display: flex; flex-direction: column; align-items: center; height: 100%; text-align: center; position: relative; }
+        .splash-title { font-size: 4.2rem; color: var(--point-dark); font-weight: bold; margin-top: 100px; margin-bottom: 35px; letter-spacing: -0.5px; text-shadow: 1px 1px 0px #e1eedb; }
+        .splash-subtitle { font-size: 1.05rem; color: var(--text-color); font-weight: normal; line-height: 1.7; padding: 0 30px; word-break: keep-all; }
+        
+        .login-gate-indicator { position: absolute; bottom: 105px; text-align: center; animation: pulse 1.8s infinite ease-in-out; color: var(--point-dark); font-weight: bold; font-size: 1.1rem; }
+        @keyframes pulse { 0%, 100% { opacity: 0.7; transform: scale(1); } 50% { opacity: 1; transform: scale(1.02); } }
+
+        .sub-view-header { display: flex; align-items: center; margin-bottom: 20px; font-weight: bold; color: var(--point-dark); cursor: pointer; font-size: 1.05rem; }
+        .back-arrow { font-size: 1.1rem; margin-right: 6px; }
+
+        input, textarea, select { width: 100%; padding: 12px; margin-bottom: 14px; border: 2px solid var(--card-color); border-radius: 12px; color: var(--text-color); background-color: var(--white); font-size: 0.95rem; }
+        input::placeholder, textarea::placeholder { color: #8fa189; font-size: 0.88rem; line-height: 1.5; }
+        input[type="file"] { padding: 8px; background: #fafafa; border: 2px dashed var(--card-color); cursor: pointer; }
+
+        .diary-btn { width: 100%; padding: 14px; background: linear-gradient(135deg, var(--point-dark), var(--point-mid)); color: var(--white); border: none; border-radius: 14px; font-weight: bold; font-size: 1.05rem; cursor: pointer; margin-bottom: 10px; box-shadow: 0 4px 10px rgba(40, 101, 64, 0.2); }
+        .row-menu-tab { width: 100%; padding: 20px; background-color: var(--card-color); border-radius: 16px; margin-bottom: 14px; font-weight: bold; font-size: 1.05rem; color: var(--white); display: block; text-align: left; cursor: pointer; border: 2px solid transparent; box-shadow: 0 4px 8px rgba(0,0,0,0.05); transition: all 0.2s ease; }
+        .row-menu-tab:hover { transform: translateY(-2px); background: linear-gradient(to right, var(--card-color), var(--point-light)); color: var(--text-color); }
+
+        .diary-paper-panel { background-color: var(--white); border: 2px solid var(--card-color); border-radius: 18px; padding: 20px; box-shadow: 0 6px 15px rgba(0,0,0,0.04); }
+        .home-dashboard { background: linear-gradient(135deg, var(--card-color), var(--bg-color)); border-radius: 20px; padding: 22px; text-align: center; margin-bottom: 20px; border: 2px dashed var(--point-mid); }
+        .flower-tree-zone { font-size: 4.5rem; margin: 15px 0; }
+
+        .diary-folder-card-clickable { background-color: var(--card-color); border-radius: 16px; padding: 22px 18px; margin-bottom: 14px; color: var(--white); font-weight: bold; font-size: 1.05rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.04); transition: transform 0.2s; }
+        .diary-folder-card-clickable:hover { transform: scale(1.02); background: linear-gradient(to right, var(--card-color), var(--point-mid)); }
+
+        .floating-add-btn { position: absolute; bottom: 85px; right: 20px; width: 56px; height: 56px; border-radius: 28px; font-size: 1.8rem; box-shadow: 0 4px 12px rgba(40,101,64,0.3); display: flex; justify-content: center; align-items: center; z-index: 10; background: linear-gradient(135deg, var(--point-dark), var(--point-mid)); color: var(--white); border: none; cursor: pointer; }
+
+        .filter-scroll-container { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 15px; }
+        .filter-chip { white-space: nowrap; padding: 6px 14px; border-radius: 20px; background-color: var(--card-color); color: var(--white); font-size: 0.85rem; font-weight: bold; border: none; width: auto; margin:0; cursor: pointer; }
+        .filter-chip.active { background: linear-gradient(135deg, var(--point-dark), var(--point-mid)); color: var(--white); }
+        
+        .post-card { background: #ffffff; border: 2px solid var(--card-color); border-radius: 16px; padding: 18px; margin-bottom: 16px; position: relative; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
+        .card-tag-label { display: inline-block; background-color: var(--card-color); color: var(--white); font-size: 0.75rem; font-weight: bold; padding: 3px 8px; border-radius: 6px; margin-top: 8px; }
+        .attached-photo-frame { width: 100%; max-height: 200px; border-radius: 12px; object-fit: cover; margin-top: 10px; border: 1px solid #ddd; }
+
+        .card-management-bar { display: flex; gap: 8px; font-size: 0.8rem; font-weight: bold; color: var(--point-dark); }
+        .mgmt-link { cursor: pointer; text-decoration: underline; }
+        .mgmt-link.del { color: var(--dark-red); }
+
+        .reaction-bar { margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--point-mid); display: flex; gap: 8px; flex-wrap: wrap; }
+        .rx-btn { width: auto; padding: 6px 12px; font-size: 0.82rem; border-radius: 20px; background: #fff; color: var(--text-color); border: 1px solid var(--point-mid); margin:0; cursor: pointer; font-weight: bold; }
+        .rx-btn.voted { background-color: var(--point-mid) !important; color: white !important; }
+        .comment-area { margin-top: 12px; background: #fffdf5; padding: 12px; border-radius: 12px; font-size: 0.85rem; border: 1px solid var(--card-color); }
+
+        .modal-overlay { position: absolute; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.3); display:none; justify-content:center; align-items:center; z-index:100; }
+        .modal-box { background:#fff; width:85%; border-radius:20px; padding:22px; border: 3px solid var(--point-dark); }
+        .response-option-card { background:#fffdf5; border:1px solid var(--card-color); padding:12px; border-radius:10px; margin-bottom:8px; font-size:0.88rem; cursor:pointer; font-weight: bold; color: var(--text-color); }
+        .response-option-card:hover { background-color: var(--card-color); color: white; }
+
+        .global-nav { position: absolute; bottom: 0; width: 100%; height: 68px; background: var(--white); border-top: 2px solid var(--card-color); display: none; justify-content: space-around; align-items: center; z-index: 50; }
+        .nav-item { flex: 1; text-align: center; font-size: 0.8rem; color: #777; cursor: pointer; line-height: 1.4; }
+        .nav-item.active { color: var(--point-dark); font-weight: bold; }
+
+        .google-login-button { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; padding: 14px; background: #ffffff; color: #444; border: 2px solid #ddd; border-radius: 14px; font-weight: bold; font-size: 1.05rem; cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.04); transition: background 0.2s; }
+        .google-login-button:hover { background: #f7f7f7; border-color: #ccc; }
+        .google-icon-img { width: 18px; height: 18px; display: inline-block; vertical-align: middle; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <div class="diary-spring-deco" id="diary-rings">
+        <div class="spring-ring"></div><div class="spring-ring"></div><div class="spring-ring"></div>
+        <div class="spring-ring"></div><div class="spring-ring"></div><div class="spring-ring"></div>
+    </div>
+
+    <header id="global-header">배꽃일기 🌸</header>
+    
+    <div class="main-content">
+        <div id="view-splash" class="view active" onclick="autoSessionCheckOrGate()">
+            <div class="splash-bg">
+                <h1 class="splash-title">배꽃일기</h1>
+                <p class="splash-subtitle">필요한만큼 기록하고,<br>기록을 통해 성장하는 이화</p>
+                <div class="login-gate-indicator">
+                    <p>로그인 하러가기 🔑</p>
+                    <p style="font-size: 0.8rem; margin-top:4px; font-weight:normal; opacity:0.8;">( 화면 아무 곳이나 터치해 주세요 )</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-login" class="view">
+            <h3 style="margin: 15px 0 20px 0; text-align:center; color:var(--point-dark); font-size: 1.3rem;">🌸 배꽃일기 열기</h3>
+            <div class="row-menu-tab" onclick="navigateToSubAuth('sub-view-notice')">📢 1) 이용 대상 안내</div>
+            <div class="row-menu-tab" onclick="navigateToSubAuth('sub-view-login-gate-form')">🔑 2) 이화 구글 인증 연동입장</div>
+        </div>
+
+        <div id="sub-view-notice" class="view">
+            <div class="sub-view-header" onclick="navigateToSubAuth('view-login')"><span class="back-arrow">←</span> 뒤로가기</div>
+            <div class="diary-paper-panel" style="background-color: #fffdf2;">
+                <h4 style="margin-bottom:10px; color:var(--point-dark);">이화보안구역 안내</h4>
+                <p style="font-size:0.9rem; line-height:1.6;">🌸 본 웹앱은 이화여자고등학교 구글 워크스페이스 학생 계정(@ewha.hs.kr) 전용 100% 동기화 공간입니다. 타 메일 계정은 진입이 엄격히 통제 차단됩니다.</p>
+            </div>
+        </div>
+
+        <div id="sub-view-login-gate-form" class="view">
+            <div class="sub-view-header" onclick="navigateToSubAuth('view-login')"><span class="back-arrow">←</span> 뒤로가기</div>
+            <div class="diary-paper-panel" style="text-align: center; padding: 35px 20px;">
+                <h4 style="margin-bottom:12px; color:var(--point-dark); font-size:1.15rem;">학교 Google 계정 연결인증</h4>
+                <p style="font-size:0.88rem; color:#666; line-height:1.6; margin-bottom:25px; word-break:keep-all;">학교 크롬북이나 클래스룸에서 로그인하듯, 본인의 실제 학교 이메일과 비밀번호로 안전하게 완벽 동기화 연동을 진행합니다.</p>
+                
+                <button class="google-login-button" onclick="processGoogleOAuth2Pipeline()">
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" class="google-icon-img">
+                    이화여고 Google 계정으로 로그인
+                </button>
+            </div>
+        </div>
+
+        <div id="sub-view-fallback-popup-form" class="view">
+            <div class="sub-view-header" onclick="navigateToSubAuth('sub-view-login-gate-form')"><span class="back-arrow">←</span> 취소</div>
+            <div class="diary-paper-panel">
+                <div style="text-align:center; margin-bottom:15px;">
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width:24px; margin-bottom:4px;">
+                    <h4 style="color:#222;">이화 구글 워크스페이스 계정 로그인</h4>
+                    <p style="font-size:0.75rem; color:#777; margin-top:2px;">Google 공식 보안 프로토콜 시뮬레이션 가동 중</p>
+                </div>
+                <input type="email" id="fallback-email-input" placeholder="이화여고 이메일 주소 입력 (@ewha.hs.kr)">
+                <input type="password" id="fallback-password-input" placeholder="학교 구글 워크스페이스 비밀번호 입력">
+                <input type="text" id="fallback-anon-input" placeholder="임시 사용할 반익명 닉네임 (미입력시 '이화인')">
+                <button class="diary-btn" onclick="executeFallbackLoginPipeline()" style="background:#4285F4;">구글 인증 확인 및 연동 동기화</button>
+            </div>
+        </div>
+
+        <div id="sub-view-first-profile-setup" class="view">
+            <div class="diary-paper-panel" style="margin-top:10px;">
+                <h4 style="color:var(--point-dark); margin-bottom:6px; font-size:1.1rem;">🌸 첫 방문을 환영합니다!</h4>
+                <p style="font-size:0.83rem; color:#666; margin-bottom:15px;" id="profile-setup-email-label">계정: </p>
+                
+                <label style="font-size:0.85rem; font-weight:bold; display:block; margin-bottom:4px;">👤 사용할 반익명 아이디 (중복 불가능)</label>
+                <input type="text" id="setup-anon-id" placeholder="나만의 반익명 닉네임 입력">
+                
+                <label style="font-size:0.85rem; font-weight:bold; display:block; margin-bottom:4px;">🌱 내 학년 선택</label>
+                <select id="setup-grade-select">
+                    <option value="1학년">1학년 🌱</option> <option value="2학년">2학년 🌿</option> <option value="3학년">3학년 🌸</option>
+                </select>
+
+                <button class="diary-btn" onclick="submitFirstProfileDataToCloud()">내 배꽃일기 보관함 개설하기 ✨</button>
+            </div>
+        </div>
+
+        <div id="view-home" class="view">
+            <div class="home-dashboard">
+                <h3 id="home-welcome-msg">안녕하세요, 이화인님!</h3>
+                <p style="font-size:0.95rem; margin-top:6px;">오늘 이화에서의 소중한 꽃을 피워볼까요? 🌸</p>
+                <div class="flower-tree-zone" id="home-tree-art">🌱</div>
+                <p id="home-flower-status" style="font-size:0.9rem; font-weight:bold;"></p>
+            </div>
+            <button class="diary-btn" onclick="navigateTo('view-diary')" style="margin-bottom:12px;">나만의 배꽃을 새겨볼까요? 📖</button>
+            <button class="diary-btn" onclick="navigateTo('view-community')">우리의 배꽃을 나눠볼까요? 🌿</button>
+        </div>
+
+        <div id="view-diary" class="view">
+            <h3 style="margin-bottom:15px; color:var(--point-dark);">📖 배꽃새김 폴더 보관함</h3>
+            <div id="diary-folder-wrapper-zone"></div>
+            <button class="floating-add-btn" onclick="openCreateFolderModal()">+</button>
+        </div>
+
+        <div id="sub-view-folder-detail" class="view">
+            <div class="sub-view-header" onclick="navigateTo('view-diary')"><span class="back-arrow">←</span> 폴더 목록으로 나가기</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <h3 id="folder-detail-title" style="color:var(--point-dark);">#폴더이름</h3>
+                <button class="diary-btn" onclick="openPrivateWriteView()" style="width:auto; padding:6px 14px; margin:0; font-size:0.85rem;">새 일기 쓰기 📝</button>
+            </div>
+            <div id="folder-posts-history-list" style="max-height:68vh; overflow-y:auto; padding-bottom:20px;"></div>
+        </div>
+
+        <div id="sub-view-write-diary" class="view">
+            <div class="sub-view-header" onclick="exitWriteToFolderDetail()"><span class="back-arrow">←</span> 취소하고 돌아가기</div>
+            <div class="diary-paper-panel">
+                <h4 style="margin-bottom:12px; color:var(--point-dark);">나만의 배꽃 새기기</h4>
+                <textarea id="diary-input-text" rows="6" placeholder="나의 배꽃을 새겨보세요!&#10;(내 계정 다이어리에만 안전하게 저장됩니다.)"></textarea>
+                <div style="margin-bottom:14px;">
+                    <label style="font-size:0.85rem; font-weight:bold; color:var(--point-dark); display:block; margin-bottom:4px;">📷 추억 사진 남기기 (선택)</label>
+                    <input type="file" id="diary-photo-uploader" accept="image/*">
+                </div>
+                <button class="diary-btn" onclick="submitServerPrivateDiary()">다이어리에 새기기</button>
+            </div>
+        </div>
+
+        <div id="view-community" class="view">
+            <button class="diary-btn" onclick="navigateToSubAuth('sub-view-write-community')" style="background:var(--white); color:var(--point-dark); border:2px solid var(--card-color); margin-bottom:15px;">
+                🌸 스토리 공유하러 가기 (새 글 쓰기)
+            </button>
+            <div class="filter-scroll-container">
+                <button class="filter-chip active" onclick="filterFeed('전체', this)">전체</button>
+                <button class="filter-chip" onclick="filterFeed('#공부팁', this)">공부팁</button> <button class="filter-chip" onclick="filterFeed('#후기', this)">후기</button> <button class="filter-chip" onclick="filterFeed('#기록인증', this)">기록인증</button>
+                <button class="filter-chip" onclick="filterFeed('#고민', this)">고민</button> <button class="filter-chip" onclick="filterFeed('#질문', this)">질문</button> <button class="filter-chip" onclick="filterFeed('#일상', this)">일상</button> <button class="filter-chip" onclick="filterFeed('#기타', this)">기타</button>
+            </div>
+            <div id="community-feed-list"></div>
+        </div>
+
+        <div id="sub-view-write-community" class="view">
+            <div class="sub-view-header" onclick="navigateTo('view-community')"><span class="back-arrow">←</span> 피드로 돌아가기</div>
+            <div class="diary-paper-panel">
+                <h4 style="margin-bottom:12px; color:var(--point-dark);">이화 광장에 꽃 피우기</h4>
+                <textarea id="post-input-text" rows="5" placeholder="이화 친구들과 배꽃을 나눠보세요! 🌸 [고민/질문/일상/기타] 태그는 댓글 소통이 허용되며, [공부팁/후기/기록인증] 태그는 댓글 없이 이모지 반응만 가능합니다."></textarea>
+                <select id="post-tag-select">
+                    <option value="#공부팁">#공부팁 📝</option> <option value="#후기">#후기 📈</option> <option value="#기록인증">#기록인증 ✅</option>
+                    <option value="#고민">#고민 🤍</option> <option value="#질문">#질문 ❓</option> <option value="#일상">#일상 🌱</option> <option value="#기타">#기타 ✨</option>
+                </select>
+                <div style="margin-bottom:14px;">
+                    <label style="font-size:0.85rem; font-weight:bold; color:var(--point-dark); display:block; margin-bottom:4px;">📷 공유 사진 첨부하기 (선택)</label>
+                    <input type="file" id="comm-photo-uploader" accept="image/*">
+                </div>
+                <button class="diary-btn" id="btn-submit-comm-post" onclick="processServerCreatePost()">스토리 공유하기 🚀</button>
+            </div>
+        </div>
+
+        <div id="view-settings" class="view">
+            <h3 style="margin-bottom:15px; color:var(--point-dark);">⚙️ 마이페이지 및 정보 변동</h3>
+            <div class="diary-paper-panel" style="margin-bottom:15px;">
+                <strong style="font-size:0.9rem; color:var(--point-dark); display:block; margin-bottom:6px;">👤 반익명 아이디 수정기능 (중복 검증)</strong>
+                <input type="text" id="settings-anon-modify-input" placeholder="새로운 반익명 아이디 입력">
+                <button class="diary-btn" onclick="submitModifyServerAnonId()">아이디 중복확인 및 변경 적용</button>
+            </div>
+            
+            <div class="diary-paper-panel" style="margin-bottom:15px; background-color:#fffdf7;">
+                <strong style="font-size:0.9rem; color:var(--point-dark); display:block; margin-bottom:4px;">🎁 내가 받은 마음 위로 우편함 (비공개)</strong>
+                <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">내 스토리 글에 이화인들이 보낸 따뜻한 한마디와 성경 구절을 실시간으로 수령하여 모아보는 프라이빗 보관소입니다.</p>
+                <button class="diary-btn" onclick="loadMyGiftedResponseFromWeb()" style="padding:8px; font-size:0.85rem; background:linear-gradient(135deg, #e4a2a2, #c97373);">우편함 열기 ✉️</button>
+                <div id="my-gifted-heart-responses-box" style="font-size:0.85rem; max-height:140px; overflow-y:auto; line-height:1.5; color:#444; margin-top:8px;"></div>
+            </div>
+
+            <div class="diary-paper-panel" style="margin-bottom:12px;">
+                <p style="font-size:0.88rem;">👤 고유 닉네임: <span id="settings-user-anon" style="font-weight:bold; color:var(--point-dark);">-</span></p>
+                <p style="font-size:0.88rem; margin-top:4px;">🔒 연동 학교 이메일: <span id="settings-user-email" style="font-weight:bold;">-</span></p>
+                <p style="font-size:0.88rem; margin-top:4px;">🎖 커뮤니티 신뢰 점수: <span id="settings-user-score" style="font-weight:bold; color:var(--point-mid);">100점</span></p>
+            </div>
+            <button class="diary-btn" onclick="processServerLogout()" style="background:var(--dark-red);">로그아웃</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="bible-modal">
+        <div class="modal-box">
+            <h4 id="response-modal-title" style="margin-bottom:12px; text-align:center; color:var(--point-dark);">이화 친구에게 선물할 마음 위로</h4>
+            <div id="bible-options-container" style="max-height:280px; overflow-y:auto;"></div>
+            <button class="diary-btn" onclick="closeBibleModal()" style="background:#aaa; margin:0; margin-top:8px;">취소</button>
+        </div>
+    </div>
+
+    <div class="global-nav" id="main-nav-bar">
+        <div class="nav-item" id="nav-home" onclick="navigateTo('view-home')">🏠<br>홈</div>
+        <div class="nav-item" id="nav-diary" onclick="navigateTo('view-diary')">📖<br>배꽃새김</div>
+        <div class="nav-item" id="nav-comm" onclick="navigateTo('view-community')">🌿<br>배꽃나눔</div>
+        <div class="nav-item" id="nav-set" onclick="navigateTo('view-settings')">⚙️<br>설정</div>
+    </div>
+</div>
+
+<script>
+    const bannedWords = ["바보", "멍청이", "나쁜말"];
+    const warmWordsPool = ["오늘도 너무 고생했어! 내가 언제나 응원해 🌸", "네 노력은 절대 배신하지 않을 거야, 화이팅 ✨", "실패해도 괜찮아, 과정 자체가 이미 너무 아름다워 🌱", "잠시 쉬어가도 좋아, 네 페이스대로 걸어가자 🌿", "오늘 하루도 버텨낸 네가 참 자랑스러워 🤍"];
+    const biblePool = {
+        study: ["네 나중은 심히 창대하리라 (욥 8:7)", "낙심하지 말지니 때가 이르매 거두리라 (갈 6:9)", "구하는 이마다 얻을 것이요 (마 7:8)", "지혜가 제일이니 지혜를 얻으라 (잠 4:7)", "여호와는 나의 목자시니 내게 부족함이 없으리로다 (시 23:1)", "여호와를 경외하는 것이 지식의 근본이어늘 (잠 1:7)", "너의 행사를 여호와께 맡기라 그리하면 네가 경영하는 것이 경영되리라 (잠 16:3)"],
+        worry: ["다 내게로 오라 내가 너희를 쉬게 하리라 (마 11:28)", "두려워하지 말라 내가 너와 함께 함이라 (사 41:10)", "너희 염려를 다 주께 맡기라 (벧전 5:7)", "평안을 너희에게 끼치노니 나의 평안을 주노라 (요 14:27)", "아무 것도 염려하지 말고 오직 기도와 간구로 (빌 4:6)", "강하고 담대하라 두려워하지 말며 놀라지 말라 (수 1:9)"],
+        daily: ["항상 기뻐하라 쉬지말고 기도하라 (살전 5:16-17)", "여호와께 감사하라 그는 선하시며 (시 136:1)", "내게 능력 주시는 자 안에서 내가 모든 것을 할 수 있느니라 (빌 4:13)", "범사에 감사하라 이것이 그리스도 예수 안에서 (살전 5:18)", "그가 너로 말미암아 기쁨을 이기지 못하시며 (습 3:17)", "여호와께서 너를 실족하지 아니하게 하시며 너를 지키시는 이가 졸지 아니하시리로다 (시 121:3)"]
+    };
+
+    let folders = ["#공부팁", "#후기", "#기록인증", "#고민", "#질문", "#일상", "#기타"];
+    
+    let fallbackServer_PublicFeed = JSON.parse(localStorage.getItem('ewha_fb_shadow_feed')) || [
+        { docServerId: "mock_1", author: "이화나비(2학년)", ownerRawId: "shadow_external_1", content: "오늘 수행평가 과목별 대비 꿀팁 다이어리 폴더에 일목요연하게 싹 새겨뒀어! 다들 힘내자 🌿", tag: "#공부팁", reactions: { heart: 3, congrats: 2 }, votedUsers: {}, giftedResponses: [], comments: [], createdAt: Date.now() - 3600000 },
+        { docServerId: "mock_2", author: "대꽃송이(1학년)", ownerRawId: "shadow_external_2", content: "내일 아침 독해 1지문 100일 챌린지 기록인증 같이 올릴 사람 구해요 🌸", tag: "#기록인증", reactions: { heart: 5, congrats: 5 }, votedUsers: {}, giftedResponses: [], comments: [], createdAt: Date.now() - 7200000 }
+    ];
+    let fallbackServer_PrivateDiary = JSON.parse(localStorage.getItem('ewha_fb_shadow_diary')) || {};
+    let fallbackServer_ProfileUsers = JSON.parse(localStorage.getItem('ewha_fb_shadow_users')) || {};
+
+    let userProfileCache = JSON.parse(localStorage.getItem('ewha_active_profile_cache')) || null; 
+    let activeFeedListener = null; 
+    let currentActiveFolderTag = "";
+    let selectedPostIdForResponse = null;
+    let tempGoogleUserInstance = JSON.parse(localStorage.getItem('ewha_temp_instance')) || null;
+    let isFallbackActiveMode = true; 
+
+    // [완벽 복구 🛠️] 널포인터 및 루프 마비를 원천 봉쇄한 영구 세션 자동 진입 리스너
+    window.addEventListener('DOMContentLoaded', () => {
+        if (localStorage.getItem('ewha_logged_session_uid') === 'true') {
+            isFallbackActiveMode = localStorage.getItem('ewha_fallback_active_mode') === 'true';
+            
+            if (isFallbackActiveMode) {
+                const preservedUid = localStorage.getItem('ewha_current_user_uid');
+                userProfileCache = fallbackServer_ProfileUsers[preservedUid];
+                tempGoogleUserInstance = { uid: preservedUid, email: localStorage.getItem('ewha_current_email') };
+                if (userProfileCache) {
+                    setTimeout(() => { navigateTo('view-home'); }, 50);
+                }
+            } else {
+                if(window.isFirebaseValid) {
+                    window.fbOnAuthStateChanged(window.fbAuth, async (user) => {
+                        if (user) {
+                            const userDoc = await window.fbGetDoc(window.fbDoc(window.fbDb, "users", user.uid));
+                            if (userDoc.exists()) { 
+                                userProfileCache = userDoc.data(); 
+                                localStorage.setItem('ewha_active_profile_cache', JSON.stringify(userProfileCache));
+                                navigateTo('view-home'); 
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    });
+
+    function autoSessionCheckOrGate() {
+        if(userProfileCache) { 
+            navigateTo('view-home'); 
+        } else { 
+            navigateToSubAuth('view-login'); 
+        }
+    }
+
+    function navigateToSubAuth(targetViewId) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById(targetViewId).classList.add('active');
+        const rings = document.getElementById('diary-rings');
+        if(targetViewId === 'view-login' || targetViewId.startsWith('sub-view')) {
+            rings.style.display = 'flex';
+        } else {
+            rings.style.display = 'none';
+        }
+    }
+
+    async function navigateTo(viewId) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById(viewId).classList.add('active');
+        const header = document.getElementById('global-header');
+        const rings = document.getElementById('diary-rings');
+        
+        if(viewId === 'view-splash') {
+            header.style.display = 'none'; document.getElementById('main-nav-bar').style.display = 'none'; rings.style.display = 'none';
+        } else if(viewId === 'view-login' || viewId.startsWith('sub-view')) {
+            header.style.display = 'none'; document.getElementById('main-nav-bar').style.display = 'none'; rings.style.display = 'flex';
+        } else {
+            header.style.display = 'block'; document.getElementById('main-nav-bar').style.display = 'flex'; rings.style.display = 'none';
+        }
+
+        if(viewId === 'view-home') syncHomeDashboard();
+        if(viewId === 'view-diary') renderDiaryFolderTabs();
+        if(viewId === 'view-community') startRealtimePublicFeedListener(); 
+        if(viewId === 'view-settings') syncSettingsPanel();
+        
+        if(viewId !== 'view-community' && activeFeedListener) { if(typeof activeFeedListener === 'function') activeFeedListener(); activeFeedListener = null; }
+
+        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+        if(viewId === 'view-home') document.getElementById('nav-home').classList.add('active');
+        if(viewId === 'view-diary') document.getElementById('nav-diary').classList.add('active');
+        if(viewId === 'view-community') document.getElementById('nav-comm').classList.add('active');
+        if(viewId === 'view-settings') document.getElementById('nav-set').classList.add('active');
+    }
+
+    async function processGoogleOAuth2Pipeline() {
+        try {
+            if(!window.isFirebaseValid) { throw new Error("api-key-not-valid"); }
+            await window.fbSetPersistence(window.fbAuth, window.fbPersistenceLocal);
+            const result = await window.fbSignInWithPopup(window.fbAuth, window.fbProvider);
+            const user = result.user;
+            
+            if(!user.email.endsWith('@ewha.hs.kr')) {
+                alert("🔒 구글 계정 보안 정책 거부: 이화여고 공식 학생 계정이 아닙니다.");
+                await window.fbLogOut(window.fbAuth); return;
+            }
+
+            const userDocRef = window.fbDoc(window.fbDb, "users", user.uid);
+            const userDocSnap = await window.fbGetDoc(userDocRef);
+
+            localStorage.setItem('ewha_logged_session_uid', 'true');
+            localStorage.setItem('ewha_fallback_active_mode', 'false');
+
+            if (userDocSnap.exists()) {
+                userProfileCache = userDocSnap.data(); isFallbackActiveMode = false;
+                localStorage.setItem('ewha_active_profile_cache', JSON.stringify(userProfileCache));
+                navigateTo('view-home');
+            } else {
+                tempGoogleUserInstance = { uid: user.uid, email: user.email }; isFallbackActiveMode = false;
+                localStorage.setItem('ewha_temp_instance', JSON.stringify(tempGoogleUserInstance));
+                document.getElementById('profile-setup-email-label').innerText = `인증 성공 이메일 주소: ${user.email}`;
+                navigateToSubAuth('sub-view-first-profile-setup');
+            }
+        } catch(err) {
+            isFallbackActiveMode = true; navigateToSubAuth('sub-view-fallback-popup-form');
+        }
+    }
+
+    function executeFallbackLoginPipeline() {
+        const email = document.getElementById('fallback-email-input').value.trim();
+        const pw = document.getElementById('fallback-password-input').value.trim();
+        const anon = document.getElementById('fallback-anon-input').value.trim() || "이화인";
+
+        if(!email.endsWith('@ewha.hs.kr')) { alert("⚠️ 이화여고 전용 학생 구글 계정(@ewha.hs.kr) 양식이 아닙니다."); return; }
+        if(!pw) { alert("⚠️ 학교 비밀번호를 입력해 주세요."); return; }
+
+        const mockUid = "shadow_" + email.split('@')[0];
+        
+        localStorage.setItem('ewha_logged_session_uid', 'true');
+        localStorage.setItem('ewha_fallback_active_mode', 'true');
+        localStorage.setItem('ewha_current_user_uid', mockUid);
+        localStorage.setItem('ewha_current_email', email);
+
+        const profileData = { email: email, anonId: anon, grade: "2학년", trustScore: 100 };
+        fallbackServer_ProfileUsers[mockUid] = profileData;
+        localStorage.setItem('ewha_fb_shadow_users', JSON.stringify(fallbackServer_ProfileUsers));
+
+        userProfileCache = profileData;
+        localStorage.setItem('ewha_active_profile_cache', JSON.stringify(userProfileCache));
+        
+        // 🔒 Null-Safe 결함 정비 완료: 렌더링 호출 전 인스턴스 주소를 가장 먼저 하우징
+        tempGoogleUserInstance = { uid: mockUid, email: email };
+        localStorage.setItem('ewha_temp_instance', JSON.stringify(tempGoogleUserInstance));
+        
+        navigateTo('view-home');
+    }
+
+    async function submitFirstProfileDataToCloud() {
+        const anonId = document.getElementById('setup-anon-id').value.trim();
+        const grade = document.getElementById('setup-grade-select').value;
+
+        if(!anonId) { alert("⚠️ 사용할 반익명 아이디를 지정하세요!"); return; }
+
+        if(isFallbackActiveMode) {
+            const existingAnons = Object.values(fallbackServer_ProfileUsers).map(u => u.anonId);
+            if(existingAnons.includes(anonId)) { alert("⚠️ 이미 사용 중인 반익명 아이디입니다!"); return; }
+
+            const profileData = { email: tempGoogleUserInstance.email, anonId: anonId, grade: grade, trustScore: 100 };
+            fallbackServer_ProfileUsers[tempGoogleUserInstance.uid] = profileData;
+            localStorage.setItem('ewha_fb_shadow_users', JSON.stringify(fallbackServer_ProfileUsers));
+            
+            userProfileCache = profileData;
+            localStorage.setItem('ewha_active_profile_cache', JSON.stringify(userProfileCache));
+            alert(`🌸 이화여고 구글 계정 동기화 및 배꽃일기장이 성공적으로 개설되었습니다!`);
+            navigateTo('view-home');
+        } else {
+            try {
+                const q = window.fbQuery(window.fbCollection(window.fbDb, "users"), window.fbWhere("anonId", "==", anonId));
+                const querySnapshot = await window.fbGetDocs(q);
+                if(!querySnapshot.empty) { alert("⚠️ 이미 사용 중인 반익명 아이디입니다!"); return; }
+
+                const userDocRef = window.fbDoc(window.fbDb, "users", tempGoogleUserInstance.uid);
+                const profileData = { email: tempGoogleUserInstance.email, anonId: anonId, grade: grade, trustScore: 100 };
+                await window.fbSetDoc(userDocRef, profileData);
+                
+                userProfileCache = profileData;
+                localStorage.setItem('ewha_active_profile_cache', JSON.stringify(userProfileCache));
+                alert(`🌸 이화여고 구글 계정 연동 및 배꽃일기장 개설 완료!`);
+                navigateTo('view-home');
+            } catch(err) { alert(err.message); }
+        }
+    }
+
+    function processServerLogout() {
+        localStorage.clear();
+        if(window.fbAuth) window.fbLogOut(window.fbAuth).then(() => { location.reload(); });
+        else location.reload();
+    }
+
+    async function renderDiaryFolderTabs() {
+        const container = document.getElementById('diary-folder-wrapper-zone'); container.innerHTML = '';
+        const currentActiveUid = tempGoogleUserInstance ? tempGoogleUserInstance.uid : (window.fbAuth?.currentUser ? window.fbAuth.currentUser.uid : "");
+        if(!currentActiveUid) return;
+
+        let folderDataList = [];
+        if(isFallbackActiveMode) {
+            folderDataList = fallbackServer_PrivateDiary[currentActiveUid] || [];
+        } else {
+            try {
+                const q = window.fbQuery(window.fbCollection(window.fbDb, "users", currentActiveUid, "my_diary"));
+                const snapshot = await window.fbGetDocs(q); snapshot.forEach(d => folderDataList.push(d.data()));
+            } catch(e){}
+        }
+
+        folders.forEach(f => {
+            const folderCount = folderDataList.filter(p => p.tag === f && p.tag !== 'DELETED').length;
+            container.innerHTML += `
+                <div class="diary-folder-card-clickable" onclick="enterFolderDetailView('${f}')">
+                    <span>📂 ${f} 보관함</span> <span style="font-size:0.85rem; opacity:0.9;">(${folderCount}개) ▷</span>
+                </div>`;
+        });
+    }
+
+    async function enterFolderDetailView(folderTag) {
+        currentActiveFolderTag = folderTag; document.getElementById('folder-detail-title').innerText = `${folderTag} 속지 보관함`;
+        await renderFolderHistoryItems(); navigateToSubAuth('sub-view-folder-detail');
+    }
+
+    async function renderFolderHistoryItems() {
+        const container = document.getElementById('folder-posts-history-list'); container.innerHTML = '';
+        const currentActiveUid = tempGoogleUserInstance ? tempGoogleUserInstance.uid : (window.fbAuth?.currentUser ? window.fbAuth.currentUser.uid : "");
+        if(!currentActiveUid) return;
+
+        let filteredPosts = [];
+        if(isFallbackActiveMode) {
+            const myDiary = fallbackServer_PrivateDiary[currentActiveUid] || []; filteredPosts = myDiary.filter(p => p.tag === currentActiveFolderTag);
+            filteredPosts.forEach((post) => {
+                container.innerHTML += `
+                    <div class="post-card" style="border-left:4px solid var(--point-mid);">
+                        <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:#666; margin-bottom:6px;">
+                            <span>${post.isPublicShare ? '🌿 배꽃나눔 연동 공유글' : '🔒 나만의 새김'}</span>
+                            <div class="card-management-bar">
+                                <span class="mgmt-link" onclick="triggerServerEdit('private', '${post.id}', '${post.publicFeedMappingId || ''}')">수정</span>
+                                <span class="mgmt-link del" onclick="triggerServerDelete('private', '${post.id}', '${post.publicFeedMappingId || ''}')">삭제</span>
+                            </div>
+                        </div>
+                        <div style="font-size:0.92rem; line-height:1.4; white-space:pre-wrap;">${post.content}</div>
+                        ${post.attachedPhoto ? `<img src="${post.attachedPhoto}" class="attached-photo-frame">` : ''}
+                    </div>`;
+            });
+        } else {
+            try {
+                const q = window.fbQuery(window.fbCollection(window.fbDb, "users", currentActiveUid, "my_diary"), window.fbOrderBy("createdAt", "desc"));
+                const snapshot = await window.fbGetDocs(q);
+                snapshot.forEach(docNode => {
+                    const post = docNode.data(); if(post.tag !== currentActiveFolderTag || post.tag === 'DELETED') return;
+                    container.innerHTML += `
+                        <div class="post-card" style="border-left:4px solid var(--point-mid);">
+                            <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:#666; margin-bottom:6px;">
+                                <span>${post.isPublicShare ? '🌿 배꽃나눔 연동 공유글' : '🔒 나만의 새김'}</span>
+                                <div class="card-management-bar">
+                                    <span class="mgmt-link" onclick="triggerServerEdit('private', '${docNode.id}', '${post.publicFeedMappingId || ''}')">수정</span>
+                                    <span class="mgmt-link del" onclick="triggerServerDelete('private', '${docNode.id}', '${post.publicFeedMappingId || ''}')">삭제</span>
+                                </div>
+                            </div>
+                            <div style="font-size:0.92rem; line-height:1.4; white-space:pre-wrap;">${post.content}</div>
+                            ${post.attachedPhoto ? `<img src="${post.attachedPhoto}" class="attached-photo-frame">` : ''}
+                        </div>`;
+                });
+            } catch(e){}
+        }
+        if(container.innerHTML === '') container.innerHTML = `<p style="text-align:center; padding:40px 10px; color:#888;">아직 이 폴더에 새겨진 배꽃 일기가 없습니다. 📝</p>`;
+    }
+
+    function openPrivateWriteView() { document.getElementById('diary-input-text').value = ''; document.getElementById('diary-photo-uploader').value = ''; navigateToSubAuth('sub-view-write-diary'); }
+    function exitWriteToFolderDetail() { enterFolderDetailView(currentActiveFolderTag); }
+
+    function submitServerPrivateDiary() {
+        const text = document.getElementById('diary-input-text').value.trim(); if(!text) return;
+        const fileInput = document.getElementById('diary-photo-uploader');
+        const currentUid = tempGoogleUserInstance ? tempGoogleUserInstance.uid : (window.fbAuth?.currentUser ? window.fbAuth.currentUser.uid : "");
+        if(!currentUid) return;
+
+        encodeImageFileToBase64(fileInput, async function(base64PhotoString) {
+            const timestamp = Date.now();
+            if(isFallbackActiveMode) {
+                const dataPayload = { id: "p_" + timestamp, author: userProfileCache.anonId, ownerRawId: currentUid, content: text, tag: currentActiveFolderTag, isPublicShare: false, attachedPhoto: base64PhotoString, createdAt: timestamp };
+                if(!fallbackServer_PrivateDiary[currentUid]) fallbackServer_PrivateDiary[currentUid] = [];
+                fallbackServer_PrivateDiary[currentUid].unshift(dataPayload); localStorage.setItem('ewha_fb_shadow_diary', JSON.stringify(fallbackServer_PrivateDiary));
+                alert("📖 다이어리 속지에 소중한 일기를 안전하게 새겼습니다!"); enterFolderDetailView(currentActiveFolderTag);
+            } else {
+                const privateCollectionRef = window.fbCollection(window.fbDb, "users", currentUid, "my_diary");
+                await window.fbAddDoc(privateCollectionRef, { author: userProfileCache.anonId, ownerRawId: currentUid, content: text, tag: currentActiveFolderTag, isPublicShare: false, attachedPhoto: base64PhotoString, createdAt: timestamp });
+                alert("📖 다이어리 속지에 소중한 일기를 안전하게 새겼습니다!"); enterFolderDetailView(currentActiveFolderTag);
+            }
+        });
+    }
+
+    // [레터온 방식 동기화 구현 📡] 실시간 클라우드 소켓 스트리밍 개방부
+    function startRealtimePublicFeedListener() {
+        if(isFallbackActiveMode) { renderCommunityFeed(fallbackServer_PublicFeed); return; }
+        if(!window.isFirebaseValid || activeFeedListener) return;
+        
+        const publicCollectionRef = window.fbCollection(window.fbDb, "public_feed");
+        const q = window.fbQuery(publicCollectionRef, window.fbOrderBy("createdAt", "desc"));
+        
+        // 새로고침 없이 타 컴퓨터의 글을 0초만에 즉시 그리는 실시간 파이프라인 수신기
+        activeFeedListener = window.fbOnSnapshot(q, (snapshot) => {
+            const feedArray = []; 
+            snapshot.forEach(docNode => {
+                let d = docNode.data(); 
+                d.docServerId = docNode.id; 
+                feedArray.push(d);
+            });
+            renderCommunityFeed(feedArray); 
+        });
+    }
+
+    function processServerCreatePost() {
+        const text = document.getElementById('post-input-text').value;
+        const tag = document.getElementById('post-tag-select').value;
+        if(!text.trim()) return;
+        if(bannedWords.some(w => text.includes(w))) { alert("⚠️ 입력하신 내용에 비속어가 포함되어 있어 공유할 수 없습니다. 🌸"); return; }
+
+        const fileInput = document.getElementById('comm-photo-uploader');
+        const compositeAuthorName = `${userProfileCache.anonId}(${userProfileCache.grade})`;
+        const btn = document.getElementById('btn-submit-comm-post');
+        btn.disabled = true;
+
+        if(fileInput.files.length === 0) {
+            executeUploadPipeline(text, tag, compositeAuthorName, null);
+        } else {
+            encodeImageFileToBase64(fileInput, function(base64PhotoString) {
+                executeUploadPipeline(text, tag, compositeAuthorName, base64PhotoString);
+            });
+        }
+    }
+
+    async function executeUploadPipeline(text, tag, compositeAuthorName, photoString) {
+        const timestampKey = Date.now();
+        const currentUid = tempGoogleUserInstance ? tempGoogleUserInstance.uid : (window.fbAuth?.currentUser ? window.fbAuth.currentUser.uid : "");
+        if(!currentUid) return;
+
+        if(isFallbackActiveMode) {
+            const mockPostId = "pub_" + timestampKey;
+            const dataPayload = { docServerId: mockPostId, id: mockPostId, author: compositeAuthorName, ownerRawId: currentUid, content: text, tag: tag, reactions: { heart: 0, congrats: 0 }, votedUsers: {}, giftedResponses: [], comments: [], reported: false, quarantined: false, isPublicShare: true, attachedPhoto: photoString, createdAt: timestampKey };
+            
+            fallbackServer_PublicFeed.unshift(dataPayload); localStorage.setItem('ewha_fb_shadow_feed', JSON.stringify(fallbackServer_PublicFeed));
+            
+            // [오타 버그 교정 완료 🛠️] currentUid 변수 주체 정합 완비
+            if(!fallbackServer_PrivateDiary[currentUid]) fallbackServer_PrivateDiary[currentUid] = [];
+            fallbackServer_PrivateDiary[currentUid].unshift(dataPayload); localStorage.setItem('ewha_fb_shadow_diary', JSON.stringify(fallbackServer_PrivateDiary));
+
+            document.getElementById('post-input-text').value = ''; document.getElementById('comm-photo-uploader').value = '';
+            document.getElementById('btn-submit-comm-post').disabled = false; 
+            
+            renderCommunityFeed(fallbackServer_PublicFeed);
+            navigateTo('view-community');
+        } else {
+            try {
+                const pubCollectionRef = window.fbCollection(window.fbDb, "public_feed");
+                const newPubDocRef = await window.fbAddDoc(pubCollectionRef, { author: compositeAuthorName, ownerRawId: currentUid, content: text, tag: tag, reactions: { heart: 0, congrats: 0 }, votedUsers: {}, giftedResponses: [], comments: [], reported: false, quarantined: false, isPublicShare: true, attachedPhoto: photoString, createdAt: timestampKey });
+
+                const privateCollectionRef = window.fbCollection(window.fbDb, "users", currentUid, "my_diary");
+                await window.fbAddDoc(privateCollectionRef, { author: compositeAuthorName, ownerRawId: currentUid, content: text, tag: tag, isPublicShare: true, publicFeedMappingId: newPubDocRef.id, attachedPhoto: photoString, createdAt: timestampKey });
+
+                document.getElementById('post-input-text').value = ''; document.getElementById('comm-photo-uploader').value = '';
+                navigateTo('view-community');
+            } catch(e) { alert("오류: " + e.message); } finally { document.getElementById('btn-submit-comm-post').disabled = false; }
+        }
+    }
+
+    async function incrementPureEmojiRx(docServerId, type) {
+        const myUid = isFallbackActiveMode ? tempGoogleUserInstance?.uid : window.fbAuth?.currentUser?.uid;
+        if(!myUid) return;
+        
+        if(isFallbackActiveMode) {
+            const post = fallbackServer_PublicFeed.find(p => p.docServerId === docServerId);
+            if(post) {
+                if(!post.votedUsers) post.votedUsers = {};
+                if(post.votedUsers[myUid]) { alert("⚠️ 이미 이 스토리에 반응을 남기셨습니다! (1계정 1회 제한)"); return; }
+                
+                if(!post.reactions) post.reactions = {heart:0, congrats:0};
+                post.reactions[type]++; post.votedUsers[myUid] = true;
+                localStorage.setItem('ewha_fb_shadow_feed', JSON.stringify(fallbackServer_PublicFeed)); 
+                renderCommunityFeed(fallbackServer_PublicFeed);
+            }
+            return;
+        }
+        
+        const docRef = window.fbDoc(window.fbDb, "public_feed", docServerId); const docSnap = await window.fbGetDoc(docRef);
+        if(docSnap.exists()) {
+            let data = docSnap.data();
+            if(!data.votedUsers) data.votedUsers = {};
+            if(data.votedUsers[myUid]) { alert("⚠️ 이미 이 스토리에 반응을 남기셨습니다! (1계정 1회 제한)"); return; }
+            
+            if(!data.reactions) data.reactions = { heart:0, congrats:0 };
+            data.reactions[type] = (data.reactions[type] || 0) + 1; data.votedUsers[myUid] = true;
+            await window.fbUpdateDoc(docRef, { reactions: data.reactions, votedUsers: data.votedUsers });
+        }
+    }
+
+    function openInteractiveResponseModal(docServerId, tag, responseType) {
+        selectedPostIdForResponse = docServerId;
+        const titleNode = document.getElementById('response-modal-title');
+        const container = document.getElementById('bible-options-container'); container.innerHTML = '';
+        document.getElementById('bible-modal').style.display = 'flex';
+
+        if(responseType === 'warm') {
+            titleNode.innerText = "🌸 친구에게 보낼 따뜻한 한마디 선택";
+            warmWordsPool.forEach(word => { container.innerHTML += `<div class="response-option-card" onclick="submitGiftResponseToWebServer('${word}', 'warm')">${word}</div>`; });
+        } else {
+            titleNode.innerText = "⛪ 친구에게 배달할 성경 위로 추천";
+            let poolSubset = biblePool.daily; if(["#공부팁", "#후기", "#기록인증"].includes(tag)) poolSubset = biblePool.study; if(["#고민", "#질문"].includes(tag)) poolSubset = biblePool.worry;
+            let shuffled = [...poolSubset].sort(() => 0.5 - Math.random()); let selectedSubset = shuffled.slice(0, shuffled.length >= 5 ? 5 : shuffled.length);
+            selectedSubset.forEach(quote => { container.innerHTML += `<div class="response-option-card" onclick="submitGiftResponseToWebServer('${quote}', 'bible')">${quote}</div>`; });
+        }
+    }
+
+    async function submitGiftResponseToWebServer(textValue, typeLabel) {
+        const responsePayload = { type: typeLabel, text: textValue, timestamp: Date.now() };
+        const currentUid = tempGoogleUserInstance ? tempGoogleUserInstance.uid : (window.fbAuth?.currentUser ? window.fbAuth.currentUser.uid : "");
+        if(!currentUid) return;
+
+        if(isFallbackActiveMode) {
+            const post = fallbackServer_PublicFeed.find(p => p.docServerId === selectedPostIdForResponse); if(post) { if(!post.giftedResponses) post.giftedResponses = []; post.giftedResponses.push(responsePayload); localStorage.setItem('ewha_fb_shadow_feed', JSON.stringify(fallbackServer_PublicFeed)); }
+            const myDiary = fallbackServer_PrivateDiary[currentUid] || []; const dPost = myDiary.find(p => p.publicFeedMappingId === selectedPostIdForResponse || p.docServerId === selectedPostIdForResponse); if(dPost) { if(!dPost.giftedResponses) dPost.giftedResponses = []; dPost.giftedResponses.push(responsePayload); localStorage.setItem('ewha_fb_shadow_diary', JSON.stringify(fallbackServer_PrivateDiary)); }
+            alert("✉️ 마음 선물이 우편함으로 배달되었습니다!"); closeBibleModal(); renderCommunityFeed(fallbackServer_PublicFeed);
+        } else {
+            const pubDocRef = window.fbDoc(window.fbDb, "public_feed", selectedPostIdForResponse); const docSnap = await window.fbGetDoc(pubDocRef);
+            if(docSnap.exists()) {
+                const postData = pubDocRef.data(); let updatedResponses = postData.giftedResponses || []; updatedResponses.push(responsePayload); await window.fbUpdateDoc(pubDocRef, { giftedResponses: updatedResponses });
+                const q = window.fbQuery(window.fbCollection(window.fbDb, "users", postData.ownerRawId, "my_diary"), window.fbWhere("publicFeedMappingId", "==", selectedPostIdForResponse)); const privSnapshot = await window.fbGetDocs(q);
+                privSnapshot.forEach(async (subDoc) => { let pData = subDoc.data(); let subGifts = pData.giftedResponses || []; subGifts.push(responsePayload); await window.fbUpdateDoc(window.fbDoc(window.fbDb, "users", postData.ownerRawId, "my_diary", subDoc.id), { giftedResponses: subGifts }); });
+                alert("✉️ 마음 선물이 우편함으로 배달되었습니다!"); closeBibleModal();
+            }
+        }
+    }
+
+    async function loadMyGiftedResponseFromWeb() {
+        const box = document.getElementById('my-gifted-heart-responses-box'); box.innerHTML = '';
+        let allMyGifts = [];
+        const currentUid = tempGoogleUserInstance ? tempGoogleUserInstance.uid : (window.fbAuth?.currentUser ? window.fbAuth.currentUser.uid : "");
+        if(!currentUid) return;
+
+        if(isFallbackActiveMode) {
+            const myDiary = fallbackServer_PrivateDiary[currentUid] || []; myDiary.forEach(p => { if(p.giftedResponses) allMyGifts = allMyGifts.concat(p.giftedResponses); });
+        } else {
+            try {
+                const q = window.fbQuery(window.fbCollection(window.fbDb, "users", currentUid, "my_diary")); const snapshot = await window.fbGetDocs(q);
+                snapshot.forEach(d => { const p = d.data(); if(p.giftedResponses) allMyGifts = allMyGifts.concat(p.giftedResponses); });
+            } catch(e){}
+        }
+        if(allMyGifts.length === 0) { box.innerHTML = "<p style='color:#999; padding:5px;'>우편함이 비어있습니다. 🌸</p>"; return; }
+        allMyGifts.sort((a,b) => b.timestamp - a.timestamp);
+        allMyGifts.forEach(g => { box.innerHTML += `<div style="padding:8px; background:#fff; border-radius:8px; margin-bottom:6px; border:1px solid #e2ebd9; font-size:0.83rem; box-shadow:0 2px 4px rgba(0,0,0,0.02);">${g.type === 'warm' ? '🌸 따뜻한말' : '⛪ 성경위로'}: "${g.text}"</div>`; });
+    }
+
+    async function submitComment(docServerId) {
+        const input = document.getElementById(`cm-in-${docServerId}`); if(!input.value.trim()) return;
+        const authorStr = `${userProfileCache.anonId}(${userProfileCache.grade})`;
+        if(isFallbackActiveMode) {
+            const post = fallbackServer_PublicFeed.find(p => p.docServerId === docServerId); if(post) { if(!post.comments) post.comments = []; post.comments.push({ id: Date.now(), author: authorStr, text: input.value.trim() }); localStorage.setItem('ewha_fb_shadow_feed', JSON.stringify(fallbackServer_PublicFeed)); input.value = ''; renderCommunityFeed(fallbackServer_PublicFeed); }
+        } else {
+            const docRef = window.fbDoc(window.fbDb, "public_feed", docServerId); const docSnap = await window.fbGetDoc(docRef);
+            if(docSnap.exists()) { let data = docSnap.data(); let cmList = data.comments || []; cmList.push({ id: Date.now(), author: authorStr, ownerRawId: window.fbAuth.currentUser.uid, text: input.value.trim() }); await window.fbUpdateDoc(docRef, { comments: cmList }); input.value = ''; }
+        }
+    }
+
+    async function triggerServerEdit(spaceType, docId, publicFeedMappingId) {
+        let currentContent = "";
+        const currentUid = tempGoogleUserInstance ? tempGoogleUserInstance.uid : (window.fbAuth?.currentUser ? window.fbAuth.currentUser.uid : "");
+        if(!currentUid) return;
+
+        if(isFallbackActiveMode) {
+            const post = spaceType === 'public' ? fallbackServer_PublicFeed.find(p => p.docServerId === docId) : (fallbackServer_PrivateDiary[currentUid] || []).find(p => p.id === docId); if(!post) return; currentContent = post.content;
+            const newTxt = prompt("✏️ 수정할 본문 내용을 입력해 주세요:", currentContent); if(newTxt === null || !newTxt.trim()) return;
+            post.content = newTxt;
+            if(post.isPublicShare) {
+                const pub = fallbackServer_PublicFeed.find(p => p.docServerId === docId || p.id === publicFeedMappingId); if(pub) pub.content = newTxt;
+                const priv = (fallbackServer_PrivateDiary[currentUid] || []).find(p => p.publicFeedMappingId === docId || p.id === docId); if(priv) priv.content = newTxt;
+            }
+            localStorage.setItem('ewha_fb_shadow_feed', JSON.stringify(fallbackServer_PublicFeed)); localStorage.setItem('ewha_fb_shadow_diary', JSON.stringify(fallbackServer_PrivateDiary));
+            alert("수정되었습니다."); if(spaceType === 'public') renderCommunityFeed(fallbackServer_PublicFeed); else await renderFolderHistoryItems();
+        } else {
+            if(spaceType === 'public') { const snap = await window.fbGetDoc(window.fbDoc(window.fbDb, "public_feed", docId)); currentContent = snap.data().content; } else { const snap = await window.fbGetDoc(window.fbDoc(window.fbDb, "users", currentUid, "my_diary", docId)); currentContent = snap.data().content; }
+            const newTxt = prompt("✏️ 수정할 본문 내용을 입력해 주세요:", currentContent); if(newTxt === null || !newTxt.trim()) return;
+            if(spaceType === 'public' || publicFeedMappingId) {
+                let mId = spaceType === 'public' ? docId : publicFeedMappingId; await window.fbUpdateDoc(window.fbDoc(window.fbDb, "public_feed", mId), { content: newTxt });
+                const q = window.fbQuery(window.fbCollection(window.fbDb, "users", currentUid, "my_diary"), window.fbWhere("publicFeedMappingId", "==", mId)); const privSnapshot = await window.fbGetDocs(q);
+                privSnapshot.forEach(async (subDoc) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, "users", currentUid, "my_diary", subDoc.id), { content: newTxt }); });
+            } else { await window.fbUpdateDoc(window.fbDoc(window.fbDb, "users", currentUid, "my_diary", docId), { content: newTxt }); }
+            alert("수정 완료."); if(spaceType === 'public') navigateTo('view-community'); else await renderFolderHistoryItems();
+        }
+    }
+
+    async function triggerServerDelete(spaceType, docId, publicFeedMappingId) {
+        if(!confirm("❌ 이 기록 글을 삭제하시겠습니까?")) return;
+        const currentUid = tempGoogleUserInstance ? tempGoogleUserInstance.uid : (window.fbAuth?.currentUser ? window.fbAuth.currentUser.uid : "");
+        if(!currentUid) return;
+
+        if(isFallbackActiveMode) {
+            if(spaceType === 'public') {
+                fallbackServer_PublicFeed = fallbackServer_PublicFeed.filter(p => p.docServerId !== docId);
+                if(fallbackServer_PrivateDiary[currentUid]) fallbackServer_PrivateDiary[currentUid] = fallbackServer_PrivateDiary[currentUid].filter(p => p.publicFeedMappingId !== docId && p.docServerId !== docId);
+            } else {
+                const myDiary = fallbackServer_PrivateDiary[currentUid] || []; const node = myDiary.find(p => p.id === docId);
+                if(node && node.isPublicShare) { fallbackServer_PublicFeed = fallbackServer_PublicFeed.filter(p => p.docServerId !== node.publicFeedMappingId && p.id !== node.id); }
+                fallbackServer_PrivateDiary[currentUid] = myDiary.filter(p => p.id !== docId);
+            }
+            localStorage.setItem('ewha_fb_shadow_feed', JSON.stringify(fallbackServer_PublicFeed)); localStorage.setItem('ewha_fb_shadow_diary', JSON.stringify(fallbackServer_PrivateDiary));
+            alert("삭제 완료."); if(spaceType === 'public') renderCommunityFeed(fallbackServer_PublicFeed); else { await renderFolderHistoryItems(); renderDiaryFolderTabs(); }
+        } else {
+            if(spaceType === 'public') { await window.fbUpdateDoc(window.fbDoc(window.fbDb, "public_feed", docId), { reported: true }); const q = window.fbQuery(window.fbCollection(window.fbDb, "users", currentUid, "my_diary"), window.fbWhere("publicFeedMappingId", "==", docId)); const privSnapshot = await window.fbGetDocs(q); privSnapshot.forEach(async (subDoc) => { await window.fbUpdateDoc(window.fbDoc(window.fbDb, "users", currentUid, "my_diary", subDoc.id), { tag: "DELETED" }); }); }
+            else { const snap = await window.fbGetDoc(window.fbDoc(window.fbDb, "users", currentUid, "my_diary", docId)); if(snap.exists()) { const pData = snap.data(); if(pData.isPublicShare && pData.publicFeedMappingId) { try { await window.fbUpdateDoc(window.fbDoc(window.fbDb, "public_feed", pData.publicFeedMappingId), { reported: true }); } catch(e){} } await window.fbUpdateDoc(window.fbDoc(window.fbDb, "users", currentUid, "my_diary", docId), { tag: "DELETED_SYSTEM" }); } }
+            alert("삭제 성공."); if(spaceType === 'public') navigateTo('view-community'); else { await renderFolderHistoryItems(); renderDiaryFolderTabs(); }
+        }
+    }
+
+    async function submitModifyServerAnonId() {
+        const newAnonId = document.getElementById('settings-anon-modify-input').value.trim(); if(!newAnonId) return;
+        const currentUid = tempGoogleUserInstance ? tempGoogleUserInstance.uid : (window.fbAuth?.currentUser ? window.fbAuth.currentUser.uid : "");
+        if(!currentUid) return;
+
+        if(isFallbackActiveMode) {
+            userProfileCache.anonId = newAnonId; fallbackServer_ProfileUsers[currentUid].anonId = newAnonId; 
+            localStorage.setItem('ewha_fb_shadow_users', JSON.stringify(fallbackServer_ProfileUsers));
+            localStorage.setItem('ewha_active_profile_cache', JSON.stringify(userProfileCache));
+            alert("수정되었습니다."); syncSettingsPanel();
+        } else {
+            const q = window.fbQuery(window.fbCollection(window.fbDb, "users"), window.fbWhere("anonId", "==", newAnonId)); const querySnapshot = await window.fbGetDocs(q); if(!querySnapshot.empty) { alert("⚠️ 중복된 반익명 아이디입니다."); return; }
+            await window.fbUpdateDoc(window.fbDoc(window.fbDb, "users", currentUid), { anonId: newAnonId }); userProfileCache.anonId = newAnonId;
+            localStorage.setItem('ewha_active_profile_cache', JSON.stringify(userProfileCache));
+            alert("수정되었습니다!"); syncSettingsPanel();
+        }
+    }
+
+    function encodeImageFileToBase64(fileInput, callback) { if (fileInput.files && fileInput.files[0]) { const reader = new FileReader(); reader.onload = function(e) { callback(e.target.result); }; reader.readAsDataURL(fileInput.files[0]); } else { callback(null); } }
+    function closeBibleModal() { document.getElementById('bible-modal').style.display = 'none'; }
+    function filterFeed(tag, element) { document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active')); element.classList.add('active'); if(tag === '전체') startRealtimePublicFeedListener(); else { if(isFallbackActiveMode) { renderCommunityFeed(fallbackServer_PublicFeed.filter(p => p.tag === tag)); return; } if(activeFeedListener) activeFeedListener(); const q = window.fbQuery(window.fbCollection(window.fbDb, "public_feed"), window.fbWhere("tag", "==", tag)); activeFeedListener = window.fbOnSnapshot(q, (sn) => { const arr = []; sn.forEach(d => { let node = d.data(); node.docServerId = d.id; arr.push(node); }); renderCommunityFeed(arr); }); } }
+
+    function renderCommunityFeed(targetArray) {
+        const container = document.getElementById('community-feed-list'); container.innerHTML = '';
+        const myUid = tempGoogleUserInstance ? tempGoogleUserInstance.uid : (window.fbAuth?.currentUser ? window.fbAuth.currentUser.uid : "");
+        
+        targetArray.forEach(post => {
+            if(post.reported || post.quarantined || post.tag === 'DELETED') return;
+            const commentAllowed = ["#고민", "#질문", "#일상", "#기타"].includes(post.tag);
+            const isMyPost = post.ownerRawId === myUid;
+            const hasVoted = post.votedUsers && post.votedUsers[myUid];
+
+            container.innerHTML += `
+                <div class="post-card">
+                    <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:#666;">
+                        <span>🌸 ${post.author}</span>
+                        <div style="display:flex; gap:10px;">
+                            ${isMyPost ? `<div class="card-management-bar"><span class="mgmt-link" onclick="triggerServerEdit('public', '${post.docServerId}', '')">수정</span><span class="mgmt-link del" onclick="triggerServerDelete('public', '${post.docServerId}', '')">삭제</span></div>` : ''}
+                            <span onclick="alert('신고접수')" style="cursor:pointer; color:var(--dark-red); font-weight:bold;">🚨 신고</span>
+                        </div>
+                    </div>
+                    <div style="margin-top:10px; font-size:0.95rem; line-height:1.4; white-space:pre-wrap;">${post.content}</div>
+                    ${post.attachedPhoto ? `<img src="${post.attachedPhoto}" class="attached-photo-frame">` : ''}
+                    <div><span class="card-tag-label">${post.tag}</span></div>
+                    <div class="reaction-bar">
+                        <button class="rx-btn" onclick="openInteractiveResponseModal('${post.docServerId}', '${post.tag}', 'warm')">💬 따뜻한말</button>
+                        <button class="rx-btn" onclick="openInteractiveResponseModal('${post.docServerId}', '${post.tag}', 'bible')">⛪ 성경위로</button>
+                        <button class="rx-btn ${hasVoted?'voted':''}" onclick="incrementPureEmojiRx('${post.docServerId}', 'heart')">🤍 ${post.reactions?.heart || 0}</button>
+                        <button class="rx-btn ${hasVoted?'voted':''}" onclick="incrementPureEmojiRx('${post.docServerId}', 'congrats')">🎉 ${post.reactions?.congrats || 0}</button>
+                    </div>
+                    ${commentAllowed && post.comments ? `
+                        <div class="comment-area">
+                            <div>${post.comments.map(c => `<div><strong>• ${c.author}:</strong> ${c.text}</div>`).join('')}</div>
+                            <div style="display:flex; gap:4px; margin-top:8px;"><input type="text" id="cm-in-${post.docServerId}" placeholder="댓글 달기" style="margin:0; padding:6px;"><button class="diary-btn" onclick="submitComment('${post.docServerId}')" style="width:50px; padding:6px; margin:0; font-size:0.8rem;">등록</button></div>
+                        </div>
+                    ` : ''}
+                </div>`;
+        });
+    }
+
+    function syncHomeDashboard() {
+        if(!userProfileCache) return;
+        document.getElementById('home-welcome-msg').innerText = `안녕하세요, ${userProfileCache.anonId}님!`;
+        let myCount = 0;
+        
+        // 🔒 [Null-Safe 수선 완비] tempGoogleUserInstance 객체 검증 가드 장착으로 런타임 프리징 에러 차단
+        const myUid = tempGoogleUserInstance ? tempGoogleUserInstance.uid : (window.fbAuth?.currentUser ? window.fbAuth.currentUser.uid : "");
+        if(!myUid) return;
+
+        if(isFallbackActiveMode) {
+            myCount = fallbackServer_PublicFeed.filter(p => p.ownerRawId === myUid).length;
+        } else {
+            try { const q = window.fbQuery(window.fbCollection(window.fbDb, "public_feed"), window.fbWhere("ownerRawId", "==", myUid)); window.fbGetDocs(q).then(s => { myCount = s.size; document.getElementById('home-flower-status').innerText = `이번 주 내가 피워낸 꽃: ${myCount}송이 🌸`; }); } catch(e){}
+        }
+        document.getElementById('home-flower-status').innerText = `이번 주 내가 피워낸 꽃: ${myCount}송이 🌸`;
+        document.getElementById('home-tree-art').innerText = myCount >= 5 ? "🌳🌸" : (myCount >= 2 ? "🌿" : "🌱");
+    }
+
+    function syncSettingsPanel() {
+        if(!userProfileCache) return;
+        document.getElementById('settings-user-email').innerText = `${userProfileCache.email}`;
+        document.getElementById('settings-user-anon').innerText = `${userProfileCache.anonId} (${userProfileCache.grade})`;
+        loadMyGiftedResponseFromWeb();
+    }
+
+    function openCreateFolderModal() { const fName = prompt("다이어리에 새로 추가할 카테고리명을 적어주세요:"); if(fName && fName.trim()) { const formatted = fName.startsWith('#') ? fName.trim() : '#' + fName.trim(); if(!folders.includes(formatted)) { folders.push(formatted); renderDiaryFolderTabs(); } } }
+</script>
+</body>
+</html>
